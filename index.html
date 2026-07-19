@@ -304,18 +304,43 @@ function startRec(){
   };
 
   rec.onend=function(){
-    if(run)setTimeout(function(){
-      if(run)try{rec.start()}catch(e){setTimeout(function(){if(run)try{rec.start()}catch(e){}},300)}
-    },120);
+    // 录音结束时立刻重启
+    if(run)restartRec();
   };
 
   rec.onerror=function(e){
     if(!run)return;
-    if(e.error==='not-allowed'){alert('请允许麦克风');stop()}
+    if(e.error==='not-allowed'){alert('请允许麦克风');stop();return}
+    // 其他错误也尝试重启
+    if(run)restartRec();
   };
 
-  try{rec.start()}catch(e){stop()}
+  try{rec.start();document.getElementById('stxt').textContent='🔴 录音中...'}catch(e){stop()}
 }
+
+function restartRec(){
+  setTimeout(function(){
+    if(!run)return;
+    try{rec.start();document.getElementById('stxt').textContent='🔴 录音中...'}
+    catch(e){
+      // 再试一次
+      setTimeout(function(){
+        if(!run)return;
+        try{rec.start()}
+        catch(e2){document.getElementById('stxt').textContent='⚠️ 录音异常，点击重试'}
+      },200);
+    }
+  },100);
+}
+
+// 保活心跳：每2秒检查录音是否在跑，停了就重启
+setInterval(function(){
+  if(!run||!rec)return;
+  // 如果 recognition 状态不是 listening，尝试重启
+  try{rec.start()}catch(e){
+    // 已经在跑会抛错，这是正常的
+  }
+},2000);
 
 async function handle(text){
   document.getElementById('stxt').textContent='🔄 翻译中...';
@@ -342,8 +367,13 @@ function speak(text,lang){
   var u=new SpeechSynthesisUtterance(text);u.lang=lang;u.rate=0.85;u.volume=1;
   var v=speechSynthesis.getVoices();
   for(var i=0;i<v.length;i++){if(v[i].lang.indexOf(lang.split('-')[0])===0){u.voice=v[i];break}}
-  u.onend=function(){if(run)setTimeout(function(){if(run&&rec)try{rec.start()}catch(e){}},80)};
-  u.onerror=function(){if(run)setTimeout(function(){if(run&&rec)try{rec.start()}catch(e){}},80)};
+  u.onend=function(){
+    // TTS 播完后重启录音
+    if(run)restartRec();
+  };
+  u.onerror=function(){
+    if(run)restartRec();
+  };
   speechSynthesis.speak(u);
 }
 if(window.speechSynthesis)speechSynthesis.onvoiceschanged=function(){speechSynthesis.getVoices()};
