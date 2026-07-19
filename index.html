@@ -240,6 +240,12 @@ body.dark .home-btn .ring{background:linear-gradient(145deg,#3a3a3c,#2c2c2e);box
       <button class="setting-toggle on" id="speakToggle" onclick="toggleSpeak()"></button>
     </div>
     <div class="setting-row">
+      <div><div class="setting-label">播报声音</div><div class="setting-desc" id="voiceDesc">自动选择</div></div>
+      <select class="setting-select" id="voiceSel" onchange="setVoice(this.value)" style="max-width:140px;font-size:11px">
+        <option value="auto">自动</option>
+      </select>
+    </div>
+    <div class="setting-row">
       <div><div class="setting-label">播报语速</div><div class="setting-desc" id="rateDesc">0.85x</div></div>
       <input type="range" class="setting-range" id="rateRange" min="3" max="10" value="8" oninput="setRate(this.value)">
     </div>
@@ -269,6 +275,7 @@ var done={},warmTts=false;
 var mode='single'; // single|both|dialog
 var speaker='A'; // dialog mode
 var speakOn=true,subOn=false,darkMode=false,engine='parallel',speechRate=0.85;
+var selectedVoice=null; // null=自动
 var history=[]; // 翻译历史
 
 var PAIRS=[
@@ -357,10 +364,54 @@ function toggleSpeaker(){speakOn=!speakOn;$('spkBtn').classList.toggle('on',spea
 function swapLang(){var t=src;src=tgt;tgt=t;if(run){stop();setTimeout(go,300)}$('pairLbl').textContent=getLangName(src)+' → '+getLangName(tgt)}
 function toggleDark(){darkMode=!darkMode;document.body.classList.toggle('dark',darkMode);$('darkToggle').classList.toggle('on',darkMode)}
 function toggleSpeak(){speakOn=!speakOn;$('speakToggle').classList.toggle('on',speakOn)}
-function setRate(v){speechRate=v/10}
+function setRate(v){speechRate=v/10;document.getElementById('rateDesc').textContent=(v/10).toFixed(1)+'x'}
 function setEngine(v){engine=v}
-function openSettings(){$('settingsOverlay').classList.add('show')}
+function setVoice(v){selectedVoice=v==='auto'?null:v;document.getElementById('voiceDesc').textContent=v==='auto'?'自动选择':v}
+function openSettings(){
+  $('settingsOverlay').classList.add('show');
+  refreshVoices();
+}
 function closeSettings(e){if(e.target=== $('settingsOverlay'))$('settingsOverlay').classList.remove('show')}
+
+// 刷新声音列表
+function refreshVoices(){
+  var sel=$('voiceSel');
+  if(sel.options.length>1)return; // 已填充
+  var voices=speechSynthesis.getVoices();
+  var currentLang=tgt.split('-')[0];
+  // 按语言分组
+  var groups={};
+  voices.forEach(function(v){
+    var lang=v.lang.split('-')[0];
+    if(!groups[lang])groups[lang]=[];
+    groups[lang].push(v);
+  });
+  // 先添加当前语言的声音
+  if(groups[currentLang]){
+    var grp=document.createElement('optgroup');
+    grp.label=getLangName(currentLang+'-XX')||currentLang;
+    groups[currentLang].forEach(function(v){
+      var opt=document.createElement('option');
+      opt.value=v.name;
+      opt.textContent=v.name+(v.localService?' (本地)':' (在线)');
+      grp.appendChild(opt);
+    });
+    sel.appendChild(grp);
+  }
+  // 添加其他语言
+  Object.keys(groups).sort().forEach(function(lang){
+    if(lang===currentLang)return;
+    var grp=document.createElement('optgroup');
+    grp.label=lang;
+    groups[lang].forEach(function(v){
+      var opt=document.createElement('option');
+      opt.value=v.name;
+      opt.textContent=v.name;
+      grp.appendChild(opt);
+    });
+    sel.appendChild(grp);
+  });
+}
 
 // ─── 控制 ───
 function toggle(){run?stop():go()}
@@ -478,21 +529,29 @@ function speak(text,lang){
   if(!speakOn||!text||!window.speechSynthesis)return;
   speechSynthesis.cancel();
   var u=new SpeechSynthesisUtterance(text);u.lang=lang;u.rate=speechRate;u.volume=1;
-  var v=speechSynthesis.getVoices();
-  for(var i=0;i<v.length;i++){if(v[i].lang.indexOf(lang.split('-')[0])===0){u.voice=v[i];break}}
+  var voices=speechSynthesis.getVoices();
+  // 如果用户选了特定声音
+  if(selectedVoice){
+    var found=voices.find(function(v){return v.name===selectedVoice});
+    if(found)u.voice=found;
+  }else{
+    // 自动匹配语言
+    var currentLang=lang.split('-')[0];
+    for(var i=0;i<voices.length;i++){
+      if(voices[i].lang.indexOf(currentLang)===0){u.voice=voices[i];break}
+    }
+  }
   u.onend=function(){if(run)restartRec()};
   u.onerror=function(e){
     console.warn('TTS error:',e);
-    // 重试一次
     try{speechSynthesis.speak(u)}catch(e2){}
     if(run)setTimeout(function(){restartRec()},500);
   };
   try{speechSynthesis.speak(u)}catch(e){
-    // 失败时重启录音
     if(run)restartRec();
   }
 }
-if(window.speechSynthesis)speechSynthesis.onvoiceschanged=function(){speechSynthesis.getVoices()};
+if(window.speechSynthesis)speechSynthesis.onvoiceschanged=function(){speechSynthesis.getVoices();refreshVoices()};
 
 // ─── UI ───
 function addLog(a,b,tag){
