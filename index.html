@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>同声传译</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#f2f2f7;--glass:rgba(255,255,255,.72);--glass2:rgba(255,255,255,.45);
+  --text:#1d1d1f;--sub:#86868b;--border:rgba(0,0,0,.06);
+  --accent:#007aff;--green:#34c759;--red:#ff3b30;
+  --blur:20px;--r:20px;
+}
+@media(prefers-color-scheme:dark){
+  :root{
+    --bg:#000;--glass:rgba(28,28,30,.75);--glass2:rgba(44,44,46,.5);
+    --text:#f5f5f7;--sub:#8e8e93;--border:rgba(255,255,255,.08);
+    --accent:#0a84ff;--green:#30d158;--red:#ff453a;
+  }
+}
+html,body{height:100%;overflow:hidden}
+body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','PingFang SC',sans-serif;background:var(--bg);color:var(--text);display:flex;flex-direction:column;position:relative}
+
+/* ─── 背景装饰 ─── */
+.bg{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;overflow:hidden}
+.bg .blob{position:absolute;border-radius:50%;filter:blur(80px);opacity:.45;will-change:transform;animation:float 20s ease-in-out infinite}
+@media(prefers-color-scheme:dark){.bg .blob{opacity:.2}}
+.bg .b1{width:340px;height:340px;background:#007aff;top:-80px;left:-60px;animation-delay:0s}
+.bg .b2{width:280px;height:280px;background:#bf5af2;top:40%;right:-80px;animation-delay:-7s}
+.bg .b3{width:260px;height:260px;background:#30d158;bottom:-60px;left:30%;animation-delay:-14s}
+@keyframes float{
+  0%,100%{transform:translate(0,0) scale(1)}
+  25%{transform:translate(30px,-20px) scale(1.05)}
+  50%{transform:translate(-20px,30px) scale(.95)}
+  75%{transform:translate(20px,10px) scale(1.02)}
+}
+
+/* ─── 内容层 ─── */
+.wrap{position:relative;z-index:1;display:flex;flex-direction:column;height:100%;padding:0 env(safe-area-inset-right)}
+
+/* ─── Header ─── */
+.hdr{padding:16px 20px 6px;text-align:center;flex-shrink:0}
+.hdr h1{font-size:20px;font-weight:700;letter-spacing:-.3px}
+.hdr p{font-size:11px;color:var(--sub);margin-top:1px}
+
+/* ─── Glass Card ─── */
+.glass{
+  background:var(--glass);
+  -webkit-backdrop-filter:blur(var(--blur));
+  backdrop-filter:blur(var(--blur));
+  border:1px solid var(--border);
+  border-radius:var(--r);
+  box-shadow:0 4px 30px rgba(0,0,0,.06);
+}
+@media(prefers-color-scheme:dark){
+  .glass{box-shadow:0 4px 30px rgba(0,0,0,.3)}
+}
+
+/* ─── 语言折叠面板 ─── */
+.acc{margin:10px 14px 0;flex-shrink:0}
+.acc-trig{
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  padding:14px;cursor:pointer;transition:transform .15s;
+}
+.acc-trig:active{transform:scale(.97)}
+.acc-trig .tri{
+  width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;
+  border-top:9px solid var(--accent);transition:transform .3s cubic-bezier(.4,0,.2,1);
+}
+.acc-trig.open .tri{transform:rotate(180deg)}
+.acc-trig .lbl{font-size:14px;font-weight:600}
+.acc-trig .val{font-size:13px;color:var(--accent);font-weight:500}
+
+.acc-body{max-height:0;overflow:hidden;transition:max-height .4s cubic-bezier(.4,0,.2,1);margin-top:8px}
+.acc-body.open{max-height:700px}
+.acc-inner{padding:14px}
+.acc-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.acc-item{
+  padding:16px 6px;border-radius:14px;text-align:center;cursor:pointer;
+  border:2px solid transparent;transition:all .2s;
+  background:var(--glass2);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+}
+.acc-item:active{transform:scale(.95)}
+.acc-item.sel{border-color:var(--accent);background:rgba(0,122,255,.1)}
+.acc-item .fl{font-size:24px;display:block;margin-bottom:4px}
+.acc-item .nm{font-size:11px;font-weight:600}
+
+/* ─── 状态 ─── */
+.status{display:flex;align-items:center;justify-content:center;gap:6px;padding:8px;flex-shrink:0}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--sub);transition:all .3s}
+.dot.on{background:var(--green);box-shadow:0 0 8px var(--green)}
+.dot.rec{background:var(--red);box-shadow:0 0 10px var(--red);animation:blink 1s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.stxt{font-size:12px;color:var(--sub);transition:color .3s}
+
+/* ─── 波形 ─── */
+.wave{display:flex;align-items:center;justify-content:center;gap:2px;height:22px;flex-shrink:0;opacity:0;transition:opacity .3s}
+.wave.on{opacity:1}
+.wave i{width:2.5px;background:var(--accent);border-radius:2px;display:block;animation:wv .5s ease-in-out infinite}
+.wave i:nth-child(1){height:7px;animation-delay:0s}
+.wave i:nth-child(2){height:13px;animation-delay:.08s}
+.wave i:nth-child(3){height:19px;animation-delay:.16s}
+.wave i:nth-child(4){height:13px;animation-delay:.24s}
+.wave i:nth-child(5){height:7px;animation-delay:.32s}
+@keyframes wv{0%,100%{transform:scaleY(.25)}50%{transform:scaleY(1)}}
+
+/* ─── 翻译记录 ─── */
+.logs{flex:1;overflow:hidden;display:flex;flex-direction:column;padding:0 14px;min-height:0}
+.logs-hdr{font-size:10px;color:var(--sub);text-transform:uppercase;letter-spacing:1.2px;padding:4px 2px;flex-shrink:0;display:flex;justify-content:space-between}
+.logs-scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:10px;will-change:scroll-position}
+
+.log-item{
+  padding:14px;margin-bottom:8px;
+  border-radius:16px;
+  background:var(--glass);-webkit-backdrop-filter:blur(var(--blur));backdrop-filter:blur(var(--blur));
+  border:1px solid var(--border);box-shadow:0 2px 16px rgba(0,0,0,.04);
+  animation:slideUp .25s ease;
+}
+@media(prefers-color-scheme:dark){.log-item{box-shadow:0 2px 16px rgba(0,0,0,.2)}}
+@keyframes slideUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+.log-item .src{font-size:15px;line-height:1.5;color:var(--text);margin-bottom:3px}
+.log-item .tgt{font-size:14px;line-height:1.5;color:var(--accent);font-weight:500}
+.log-item .meta{display:flex;gap:8px;margin-top:5px}
+.log-item .meta span{font-size:9px;color:var(--sub)}
+.logs-empty{text-align:center;padding:50px 20px;color:var(--sub);font-size:13px;line-height:2.2}
+
+/* ─── Home Button ─── */
+.home-area{flex-shrink:0;padding:8px 0 20px;display:flex;justify-content:center}
+.home-btn{
+  width:68px;height:68px;border-radius:50%;border:3px solid var(--border);
+  background:var(--glass);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);
+  box-shadow:0 4px 24px rgba(0,0,0,.08),inset 0 1px 2px rgba(255,255,255,.3);
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+  transition:transform .15s,box-shadow .3s;border-color:rgba(0,0,0,.1);
+  -webkit-user-select:none;user-select:none;
+}
+@media(prefers-color-scheme:dark){
+  .home-btn{box-shadow:0 4px 24px rgba(0,0,0,.4),inset 0 1px 2px rgba(255,255,255,.05);border-color:rgba(255,255,255,.15)}
+}
+.home-btn:active{transform:scale(.9)}
+.home-btn .ring{
+  width:56px;height:56px;border-radius:50%;
+  background:linear-gradient(145deg,#ffffff,#e8e8ed);
+  display:flex;align-items:center;justify-content:center;
+  font-size:22px;transition:all .3s;
+  box-shadow:0 2px 8px rgba(0,0,0,.06);
+}
+@media(prefers-color-scheme:dark){
+  .home-btn .ring{background:linear-gradient(145deg,#3a3a3c,#2c2c2e);box-shadow:0 2px 8px rgba(0,0,0,.3)}
+}
+.home-btn.active{border-color:var(--green);box-shadow:0 0 24px rgba(52,199,89,.25)}
+.home-btn.active .ring{
+  background:linear-gradient(145deg,var(--green),#28a745);
+  box-shadow:0 0 16px rgba(52,199,89,.3);
+}
+.home-btn.active .ring .ico{color:#fff}
+
+/* ─── Stats ─── */
+.stats{display:flex;justify-content:center;gap:20px;padding:8px 16px;border-top:1px solid var(--border);flex-shrink:0}
+.stat{text-align:center}
+.stat .n{font-size:15px;font-weight:700;color:var(--accent)}
+.stat .l{font-size:8px;color:var(--sub);text-transform:uppercase;letter-spacing:.5px}
+</style>
+</head>
+<body>
+
+<!-- 背景装饰 -->
+<div class="bg"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div></div>
+
+<div class="wrap">
+  <div class="hdr"><h1>🌐 同声传译</h1><p>SimulFlow · Real-time · AirPods</p></div>
+
+  <!-- 语言选择 -->
+  <div class="acc glass" id="accBox">
+    <div class="acc-trig" id="accTrig" onclick="toggleAcc()">
+      <div class="tri"></div>
+      <span class="lbl">语言</span>
+      <span class="val" id="pairLbl">中文 → English</span>
+    </div>
+    <div class="acc-body" id="accBody">
+      <div class="acc-inner">
+        <div style="font-size:10px;color:var(--sub);margin-bottom:10px;text-align:center;letter-spacing:.5px">选择翻译语言对</div>
+        <div class="acc-grid" id="grid"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 状态 -->
+  <div class="status"><div class="dot" id="dot"></div><span class="stxt" id="stxt">就绪</span></div>
+
+  <!-- 波形 -->
+  <div class="wave" id="wave"><i></i><i></i><i></i><i></i><i></i></div>
+
+  <!-- 翻译记录 -->
+  <div class="logs">
+    <div class="logs-hdr"><span>翻译记录</span><span id="cnt">0 句</span></div>
+    <div class="logs-scroll" id="logsEl">
+      <div class="logs-empty">🎧 连接 AirPods<br>点击下方按钮开始同传<br>说完自动翻译 · 翻译完自动播报</div>
+    </div>
+  </div>
+
+  <!-- Home 按钮 -->
+  <div class="home-area">
+    <div class="home-btn" id="homeBtn" onclick="toggle()">
+      <div class="ring"><span class="ico" id="ico">▶</span></div>
+    </div>
+  </div>
+
+  <!-- 统计 -->
+  <div class="stats">
+    <div class="stat"><div class="n" id="s1">0</div><div class="l">翻译</div></div>
+    <div class="stat"><div class="n" id="s2">0</div><div class="l">字符</div></div>
+    <div class="stat"><div class="n" id="s3">0s</div><div class="l">时长</div></div>
+  </div>
+</div>
+
+<script>
+var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+var src='zh-CN',tgt='en-US',run=false,rec=null,ct=0,chars=0,t0=0;
+var done={},warmTts=false;
+
+var PAIRS=[
+['zh-CN','en-US','中文','English','🇨🇳','🇺🇸'],
+['en-US','zh-CN','English','中文','🇺🇸','🇨🇳'],
+['zh-CN','ja-JP','中文','日本語','🇨🇳','🇯🇵'],
+['ja-JP','zh-CN','日本語','中文','🇯🇵','🇨🇳'],
+['zh-CN','ko-KR','中文','한국어','🇨🇳','🇰🇷'],
+['ko-KR','zh-CN','한국어','中文','🇰🇷','🇨🇳'],
+['en-US','ja-JP','English','日本語','🇺🇸','🇯🇵'],
+['ja-JP','en-US','日本語','English','🇯🇵','🇺🇸'],
+['en-US','ko-KR','English','한국어','🇺🇸','🇰🇷'],
+['ko-KR','en-US','한국어','English','🇰🇷','🇺🇸'],
+['en-US','fr-FR','English','Français','🇺🇸','🇫🇷'],
+['fr-FR','en-US','Français','English','🇫🇷','🇺🇸'],
+['en-US','de-DE','English','Deutsch','🇺🇸','🇩🇪'],
+['de-DE','en-US','Deutsch','English','🇩🇪','🇺🇸'],
+['en-US','es-ES','English','Español','🇺🇸','🇪🇸'],
+['es-ES','en-US','Español','English','🇪🇸','🇺🇸'],
+['en-US','ru-RU','English','Русский','🇺🇸','🇷🇺'],
+['ru-RU','en-US','Русский','English','🇷🇺','🇺🇸'],
+];
+
+var grid=document.getElementById('grid');
+PAIRS.forEach(function(p){
+  var d=document.createElement('div');
+  d.className='acc-item'+(p[0]===src&&p[1]===tgt?' sel':'');
+  d.innerHTML='<span class="fl">'+p[4]+'→'+p[5]+'</span><div class="nm">'+p[2]+'→'+p[3]+'</div>';
+  d.onclick=function(){
+    src=p[0];tgt=p[1];
+    grid.querySelectorAll('.acc-item').forEach(function(x){x.classList.remove('sel')});
+    d.classList.add('sel');
+    document.getElementById('pairLbl').textContent=p[2]+' → '+p[3];
+    toggleAcc();
+    if(run){stop();setTimeout(go,300)}
+  };
+  grid.appendChild(d);
+});
+
+function toggleAcc(){
+  document.getElementById('accTrig').classList.toggle('open');
+  document.getElementById('accBody').classList.toggle('open');
+}
+
+function toggle(){run?stop():go()}
+
+function go(){
+  if(!SR){alert('浏览器不支持');return}
+  if(!warmTts&&window.speechSynthesis){try{var u=new SpeechSynthesisUtterance(' ');u.volume=0.01;speechSynthesis.speak(u)}catch(e){}warmTts=true}
+  run=true;ct=0;chars=0;t0=Date.now();
+  document.getElementById('logsEl').innerHTML='';
+  document.getElementById('homeBtn').classList.add('active');
+  document.getElementById('ico').textContent='⏹';
+  document.getElementById('wave').classList.add('on');
+  document.getElementById('dot').className='dot rec';
+  document.getElementById('stxt').textContent='🔴 录音中...';
+  startRec();
+}
+
+function stop(){
+  run=false;
+  if(rec){try{rec.abort()}catch(e){}rec=null}
+  try{speechSynthesis.cancel()}catch(e){}
+  document.getElementById('homeBtn').classList.remove('active');
+  document.getElementById('ico').textContent='▶';
+  document.getElementById('wave').classList.remove('on');
+  document.getElementById('dot').className='dot';
+  document.getElementById('stxt').textContent='就绪';
+}
+
+function startRec(){
+  rec=new SR();rec.lang=src;rec.continuous=true;rec.interimResults=true;
+
+  rec.onresult=function(e){
+    var interim='';
+    for(var i=e.resultIndex;i<e.results.length;i++){
+      var t=e.results[i][0].transcript;
+      if(e.results[i].isFinal){
+        var c=t.trim();
+        if(c.length>0&&!done[c]){done[c]=1;handle(c);setTimeout(function(){delete done[c]},5000)}
+      }else{interim+=t}
+    }
+    if(interim)document.getElementById('stxt').textContent='🎤 '+interim.substring(0,40);
+  };
+
+  rec.onend=function(){
+    if(run)setTimeout(function(){
+      if(run)try{rec.start()}catch(e){setTimeout(function(){if(run)try{rec.start()}catch(e){}},300)}
+    },120);
+  };
+
+  rec.onerror=function(e){
+    if(!run)return;
+    if(e.error==='not-allowed'){alert('请允许麦克风');stop()}
+  };
+
+  try{rec.start()}catch(e){stop()}
+}
+
+async function handle(text){
+  document.getElementById('stxt').textContent='🔄 翻译中...';
+  var fc=src.split('-')[0],tc=tgt.split('-')[0];
+  var tr='';
+  var r=await Promise.allSettled([gAPI(text,fc,tc),mAPI(text,fc,tc)]);
+  for(var i=0;i<r.length;i++){if(r[i].status==='fulfilled'&&r[i].value){tr=r[i].value;break}}
+  if(!tr)tr=text;
+  ct++;chars+=text.length;
+  document.getElementById('s1').textContent=ct;
+  document.getElementById('s2').textContent=chars;
+  document.getElementById('cnt').textContent=ct+' 句';
+  addLog(text,tr);
+  document.getElementById('stxt').textContent='🔴 录音中...';
+  speak(tr,tgt);
+}
+
+function gAPI(q,sl,tl){return new Promise(function(ok,no){var c=new AbortController();var t=setTimeout(function(){c.abort();no()},3000);fetch('https://translate.googleapis.com/translate_a/single?client=gtx&sl='+sl+'&tl='+tl+'&dt=t&q='+encodeURIComponent(q),{signal:c.signal}).then(function(r){return r.json()}).then(function(d){clearTimeout(t);if(d&&d[0])ok(d[0].map(function(p){return p[0]}).filter(Boolean).join(''));else no()}).catch(function(){clearTimeout(t);no()})})}
+function mAPI(q,sl,tl){return new Promise(function(ok,no){var c=new AbortController();var t=setTimeout(function(){c.abort();no()},3000);fetch('https://api.mymemory.translated.net/get?q='+encodeURIComponent(q)+'&langpair='+sl+'|'+tl,{signal:c.signal}).then(function(r){return r.json()}).then(function(d){clearTimeout(t);var v=d&&d.responseData&&d.responseData.translatedText;if(v&&v.toLowerCase()!==q.toLowerCase())ok(v);else no()}).catch(function(){clearTimeout(t);no()})})}
+
+function speak(text,lang){
+  if(!text||!window.speechSynthesis)return;
+  speechSynthesis.cancel();
+  var u=new SpeechSynthesisUtterance(text);u.lang=lang;u.rate=0.85;u.volume=1;
+  var v=speechSynthesis.getVoices();
+  for(var i=0;i<v.length;i++){if(v[i].lang.indexOf(lang.split('-')[0])===0){u.voice=v[i];break}}
+  u.onend=function(){if(run)setTimeout(function(){if(run&&rec)try{rec.start()}catch(e){}},80)};
+  u.onerror=function(){if(run)setTimeout(function(){if(run&&rec)try{rec.start()}catch(e){}},80)};
+  speechSynthesis.speak(u);
+}
+if(window.speechSynthesis)speechSynthesis.onvoiceschanged=function(){speechSynthesis.getVoices()};
+
+function addLog(a,b){
+  var el=document.getElementById('logsEl');var emp=el.querySelector('.logs-empty');if(emp)emp.remove();
+  var t=new Date().toLocaleTimeString('zh-CN',{hour12:false});
+  var d=document.createElement('div');d.className='log-item';
+  d.innerHTML='<div class="src">'+esc(a)+'</div><div class="tgt">'+esc(b)+'</div><div class="meta"><span>🕐 '+t+'</span><span>#'+ct+'</span></div>';
+  el.prepend(d);while(el.children.length>30)el.lastChild.remove();
+}
+
+function esc(s){return s?s.replace(/&/g,'&amp;').replace(/</g,'&lt;'):''}
+setInterval(function(){if(run&&t0)document.getElementById('s3').textContent=Math.floor((Date.now()-t0)/1000)+'s'},1000);
+</script>
+</body>
+</html>
