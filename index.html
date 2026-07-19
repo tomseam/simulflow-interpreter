@@ -264,6 +264,7 @@ body.dark .home-btn .ring{background:linear-gradient(145deg,#3a3a3c,#2c2c2e);box
   </div>
 </div>
 
+<script src="dict.js"></script>
 <script>
 // ═══════════════════════════════════════════════
 //  SimulFlow Perfect Edition
@@ -511,13 +512,20 @@ async function handle(text){
 }
 
 async function doTranslate(text,from,to){
+  var result='';
   if(engine==='parallel'){
     var r=await Promise.allSettled([gAPI(text,from,to),mAPI(text,from,to)]);
-    for(var i=0;i<r.length;i++){if(r[i].status==='fulfilled'&&r[i].value)return r[i].value}
+    for(var i=0;i<r.length;i++){if(r[i].status==='fulfilled'&&r[i].value){result=r[i].value;break}}
   }else if(engine==='google'){
-    var r=await gAPI(text,from,to);if(r)return r;
+    result=await gAPI(text,from,to)||'';
   }else{
-    var r=await mAPI(text,from,to);if(r)return r;
+    result=await mAPI(text,from,to)||'';
+  }
+  if(result)return result;
+  // 离线词典备选
+  if(typeof offlineTranslate==='function'){
+    var offline=offlineTranslate(text,from,to);
+    if(offline)return offline;
   }
   return text;
 }
