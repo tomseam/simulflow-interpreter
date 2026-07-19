@@ -419,17 +419,7 @@ function toggle(){run?stop():go()}
 
 function go(){
   if(!SR){alert('浏览器不支持语音识别');return}
-  // iOS TTS 预热：必须在用户手势中调用
-  if(!warmTts){
-    try{
-      speechSynthesis.cancel();
-      var u=new SpeechSynthesisUtterance('准备就绪');
-      u.lang='zh-CN';u.volume=1;u.rate=1;
-      u.onend=function(){warmTts=true};
-      u.onerror=function(){warmTts=true};
-      speechSynthesis.speak(u);
-    }catch(e){warmTts=true}
-  }
+  warmupTTS();
   run=true;ct=0;chars=0;t0=Date.now();history=[];
   $('logsEl').innerHTML='';
   $('homeBtn').classList.add('active');$('ico').textContent='⏹';
@@ -533,33 +523,74 @@ async function doTranslate(text,from,to){
 function gAPI(q,sl,tl){return new Promise(function(ok,no){var c=new AbortController();var t=setTimeout(function(){c.abort();no()},3000);fetch('https://translate.googleapis.com/translate_a/single?client=gtx&sl='+sl+'&tl='+tl+'&dt=t&q='+encodeURIComponent(q),{signal:c.signal}).then(function(r){return r.json()}).then(function(d){clearTimeout(t);if(d&&d[0])ok(d[0].map(function(p){return p[0]}).filter(Boolean).join(''));else no()}).catch(function(){clearTimeout(t);no()})})}
 function mAPI(q,sl,tl){return new Promise(function(ok,no){var c=new AbortController();var t=setTimeout(function(){c.abort();no()},3000);fetch('https://api.mymemory.translated.net/get?q='+encodeURIComponent(q)+'&langpair='+sl+'|'+tl,{signal:c.signal}).then(function(r){return r.json()}).then(function(d){clearTimeout(t);var v=d&&d.responseData&&d.responseData.translatedText;if(v&&v.toLowerCase()!==q.toLowerCase())ok(v);else no()}).catch(function(){clearTimeout(t);no()})})}
 
+// TTS：优先 speechSynthesis，失败用 <audio> 播放 Google TTS
+var ttsQueue=[],ttsPlaying=false;
+var ttsAudio=document.createElement('audio');
+ttsAudio.style.display='none';
+document.body.appendChild(ttsAudio);
+
 function speak(text,lang){
-  if(!speakOn||!text||!window.speechSynthesis)return;
+  if(!speakOn||!text)return;
+  ttsQueue.push({text:text,lang:lang});
+  if(!ttsPlaying)playNextTTS();
+}
+
+function playNextTTS(){
+  if(ttsQueue.length===0){
+    ttsPlaying=false;
+    // TTS 播完后重启录音
+    if(run)restartRec();
+    return;
+  }
+  ttsPlaying=true;
+  var item=ttsQueue.shift();
+  var text=item.text,lang=item.lang;
+  var lc=lang.split('-')[0];
+
+  // 方案1: Google TTS 音频流
+  var url='https://translate.google.com/translate_tts?ie=UTF-8&q='+encodeURIComponent(text)+'&tl='+lc+'&client=tw-ob&speed=0.9';
+  ttsAudio.src=url;
+  ttsAudio.onended=function(){playNextTTS()};
+  ttsAudio.onerror=function(){
+    // 方案2: fallback speechSynthesis
+    trySpeak(text,lang,function(){playNextTTS()});
+  };
+  ttsAudio.play().catch(function(){
+    trySpeak(text,lang,function(){playNextTTS()});
+  });
+}
+
+function trySpeak(text,lang,onDone){
+  if(!window.speechSynthesis){onDone();return}
   speechSynthesis.cancel();
-  var u=new SpeechSynthesisUtterance(text);u.lang=lang;u.rate=speechRate;u.volume=1;
+  var u=new SpeechSynthesisUtterance(text);
+  u.lang=lang;u.rate=speechRate;u.volume=1;
   var voices=speechSynthesis.getVoices();
-  // 如果用户选了特定声音
   if(selectedVoice){
     var found=voices.find(function(v){return v.name===selectedVoice});
     if(found)u.voice=found;
   }else{
-    // 自动匹配语言
-    var currentLang=lang.split('-')[0];
     for(var i=0;i<voices.length;i++){
-      if(voices[i].lang.indexOf(currentLang)===0){u.voice=voices[i];break}
+      if(voices[i].lang.indexOf(lang.split('-')[0])===0){u.voice=voices[i];break}
     }
   }
-  u.onend=function(){if(run)restartRec()};
-  u.onerror=function(e){
-    console.warn('TTS error:',e);
-    try{speechSynthesis.speak(u)}catch(e2){}
-    if(run)setTimeout(function(){restartRec()},500);
-  };
-  try{speechSynthesis.speak(u)}catch(e){
-    if(run)restartRec();
-  }
+  u.onend=onDone;
+  u.onerror=onDone;
+  try{speechSynthesis.speak(u)}catch(e){onDone()}
 }
-if(window.speechSynthesis)speechSynthesis.onvoiceschanged=function(){speechSynthesis.getVoices();refreshVoices()};
+
+// 预热：iOS 需要用户手势触发
+function warmupTTS(){
+  if(warmTts)return;
+  warmTts=true;
+  // 用 audio 元素播放一个静音来解锁
+  ttsAudio.src='data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+  ttsAudio.play().catch(function(){});
+  // 同时预热 speechSynthesis
+  try{speechSynthesis.speak(new SpeechSynthesisUtterance(''))}catch(e){}
+}
+
+if(window.speechSynthesis)speechSynthesis.onvoiceschanged=function(){speechSynthesis.getVoices()};
 
 // ─── UI ───
 function addLog(a,b,tag){
