@@ -4,6 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>同声传译</title>
+<link rel="manifest" href="manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="同声传译">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#007aff">
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 :root{--bg:#f2f2f7;--card:rgba(255,255,255,.72);--card2:rgba(255,255,255,.45);--text:#1d1d1f;--sub:#86868b;--border:rgba(0,0,0,.06);--accent:#007aff;--green:#34c759;--red:#ff3b30;--purple:#af52de;--blur:20px;--r:18px;--shadow:0 4px 24px rgba(0,0,0,.06)}
@@ -366,6 +372,16 @@ function exportHistory(){
   var csv='时间,原文,译文,模式\n';history.forEach(function(h){csv+='"'+h.time+'","'+h.src.replace(/"/g,'""')+'","'+h.tgt.replace(/"/g,'""')+'","'+h.mode+'"\n'});
   var blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'});var url=URL.createObjectURL(blob);
   var a=document.createElement('a');a.href=url;a.download='simulflow-history-'+new Date().toISOString().slice(0,10)+'.csv';a.click();URL.revokeObjectURL(url);
+}
+</script>
+<script>
+// PWA: 注册 Service Worker
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js').then(function(reg){
+    console.log('SW registered',reg.scope);
+  }).catch(function(e){
+    console.log('SW failed',e);
+  });
 }
 </script>
 </body>
