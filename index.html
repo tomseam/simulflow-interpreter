@@ -523,11 +523,18 @@ async function doTranslate(text,from,to){
 function gAPI(q,sl,tl){return new Promise(function(ok,no){var c=new AbortController();var t=setTimeout(function(){c.abort();no()},3000);fetch('https://translate.googleapis.com/translate_a/single?client=gtx&sl='+sl+'&tl='+tl+'&dt=t&q='+encodeURIComponent(q),{signal:c.signal}).then(function(r){return r.json()}).then(function(d){clearTimeout(t);if(d&&d[0])ok(d[0].map(function(p){return p[0]}).filter(Boolean).join(''));else no()}).catch(function(){clearTimeout(t);no()})})}
 function mAPI(q,sl,tl){return new Promise(function(ok,no){var c=new AbortController();var t=setTimeout(function(){c.abort();no()},3000);fetch('https://api.mymemory.translated.net/get?q='+encodeURIComponent(q)+'&langpair='+sl+'|'+tl,{signal:c.signal}).then(function(r){return r.json()}).then(function(d){clearTimeout(t);var v=d&&d.responseData&&d.responseData.translatedText;if(v&&v.toLowerCase()!==q.toLowerCase())ok(v);else no()}).catch(function(){clearTimeout(t);no()})})}
 
-// TTS：优先 speechSynthesis，失败用 <audio> 播放 Google TTS
+// TTS：用 CORS 代理拉 Google TTS 音频流播放
 var ttsQueue=[],ttsPlaying=false;
 var ttsAudio=document.createElement('audio');
 ttsAudio.style.display='none';
 document.body.appendChild(ttsAudio);
+
+// CORS 代理列表（哪个通就用哪个）
+var CORS_PROXIES=[
+  'https://corsproxy.io/?',
+  'https://api.allorigins.win/raw?url=',
+  'https://api.codetabs.com/v1/proxy?quest='
+];
 
 function speak(text,lang){
   if(!speakOn||!text)return;
@@ -538,7 +545,6 @@ function speak(text,lang){
 function playNextTTS(){
   if(ttsQueue.length===0){
     ttsPlaying=false;
-    // TTS 播完后重启录音
     if(run)restartRec();
     return;
   }
@@ -546,17 +552,43 @@ function playNextTTS(){
   var item=ttsQueue.shift();
   var text=item.text,lang=item.lang;
   var lc=lang.split('-')[0];
+  var ttsUrl='https://translate.google.com/translate_tts?ie=UTF-8&q='+encodeURIComponent(text)+'&tl='+lc+'&client=tw-ob&speed=0.9';
 
-  // 方案1: Google TTS 音频流
-  var url='https://translate.google.com/translate_tts?ie=UTF-8&q='+encodeURIComponent(text)+'&tl='+lc+'&client=tw-ob&speed=0.9';
-  ttsAudio.src=url;
+  // 尝试直接播放（可能成功，如果没被墙）
+  ttsAudio.src=ttsUrl;
   ttsAudio.onended=function(){playNextTTS()};
   ttsAudio.onerror=function(){
-    // 方案2: fallback speechSynthesis
-    trySpeak(text,lang,function(){playNextTTS()});
+    // 直接失败，试 CORS 代理
+    tryProxy(0,text,lang);
   };
-  ttsAudio.play().catch(function(){
+  ttsAudio.play().then(function(){
+    // 播放成功
+  }).catch(function(){
+    tryProxy(0,text,lang);
+  });
+}
+
+function tryProxy(idx,text,lang){
+  if(idx>=CORS_PROXIES.length){
+    // 所有代理都失败，试 speechSynthesis
     trySpeak(text,lang,function(){playNextTTS()});
+    return;
+  }
+  var lc=lang.split('-')[0];
+  var ttsUrl='https://translate.google.com/translate_tts?ie=UTF-8&q='+encodeURIComponent(text)+'&tl='+lc+'&client=tw-ob&speed=0.9';
+  var proxyUrl=CORS_PROXIES[idx]+encodeURIComponent(ttsUrl);
+  
+  fetch(proxyUrl).then(function(r){
+    if(!r.ok)throw new Error('proxy fail');
+    return r.blob();
+  }).then(function(blob){
+    var url=URL.createObjectURL(blob);
+    ttsAudio.src=url;
+    ttsAudio.onended=function(){URL.revokeObjectURL(url);playNextTTS()};
+    ttsAudio.onerror=function(){URL.revokeObjectURL(url);tryProxy(idx+1,text,lang)};
+    ttsAudio.play().catch(function(){URL.revokeObjectURL(url);tryProxy(idx+1,text,lang)});
+  }).catch(function(){
+    tryProxy(idx+1,text,lang);
   });
 }
 
@@ -579,14 +611,9 @@ function trySpeak(text,lang,onDone){
   try{speechSynthesis.speak(u)}catch(e){onDone()}
 }
 
-// 预热：iOS 需要用户手势触发
 function warmupTTS(){
   if(warmTts)return;
   warmTts=true;
-  // 用 audio 元素播放一个静音来解锁
-  ttsAudio.src='data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
-  ttsAudio.play().catch(function(){});
-  // 同时预热 speechSynthesis
   try{speechSynthesis.speak(new SpeechSynthesisUtterance(''))}catch(e){}
 }
 
