@@ -1,0 +1,14 @@
+{
+  "name": "同声传译 - SimulFlow",
+  "short_name": "同声传译",
+  "description": "实时同声传译，AirPods 适配",
+  "start_url": "/simulflow-interpreter/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#000000",
+  "theme_color": "#007aff",
+  "icons": [
+    {"src": "icon-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png"}
+  ]
+}
