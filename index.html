@@ -367,7 +367,17 @@ function toggle(){run?stop():go()}
 
 function go(){
   if(!SR){alert('浏览器不支持语音识别');return}
-  if(!warmTts&&window.speechSynthesis){try{var u=new SpeechSynthesisUtterance(' ');u.volume=0.01;speechSynthesis.speak(u)}catch(e){}warmTts=true}
+  // iOS TTS 预热：必须在用户手势中调用
+  if(!warmTts){
+    try{
+      speechSynthesis.cancel();
+      var u=new SpeechSynthesisUtterance('准备就绪');
+      u.lang='zh-CN';u.volume=1;u.rate=1;
+      u.onend=function(){warmTts=true};
+      u.onerror=function(){warmTts=true};
+      speechSynthesis.speak(u);
+    }catch(e){warmTts=true}
+  }
   run=true;ct=0;chars=0;t0=Date.now();history=[];
   $('logsEl').innerHTML='';
   $('homeBtn').classList.add('active');$('ico').textContent='⏹';
@@ -471,8 +481,16 @@ function speak(text,lang){
   var v=speechSynthesis.getVoices();
   for(var i=0;i<v.length;i++){if(v[i].lang.indexOf(lang.split('-')[0])===0){u.voice=v[i];break}}
   u.onend=function(){if(run)restartRec()};
-  u.onerror=function(){if(run)restartRec()};
-  speechSynthesis.speak(u);
+  u.onerror=function(e){
+    console.warn('TTS error:',e);
+    // 重试一次
+    try{speechSynthesis.speak(u)}catch(e2){}
+    if(run)setTimeout(function(){restartRec()},500);
+  };
+  try{speechSynthesis.speak(u)}catch(e){
+    // 失败时重启录音
+    if(run)restartRec();
+  }
 }
 if(window.speechSynthesis)speechSynthesis.onvoiceschanged=function(){speechSynthesis.getVoices()};
 
